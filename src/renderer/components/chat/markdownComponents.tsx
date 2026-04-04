@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { CopyButton } from '@renderer/components/common/CopyButton';
 import { PROSE_BODY } from '@renderer/constants/cssVariables';
 
 import { MermaidViewer } from './viewers/MermaidViewer';
@@ -146,21 +147,35 @@ export function createMarkdownComponents(searchCtx: SearchContext | null): Compo
       );
     },
 
-    // Code blocks — skip <pre> wrapper for mermaid diagrams
+    // Code blocks — skip <pre> wrapper for mermaid diagrams, with copy button
     pre: ({ children }) => {
       const child = React.Children.only(children) as React.ReactElement;
       if (child?.type === MermaidViewer) {
         return children as React.ReactElement;
       }
+
+      // Extract text from nested <code> children for the copy button
+      const extractText = (node: React.ReactNode): string => {
+        if (typeof node === 'string') return node;
+        if (Array.isArray(node)) return node.map(extractText).join('');
+        if (React.isValidElement(node) && node.props) {
+          const props = node.props as { children?: React.ReactNode };
+          return extractText(props.children);
+        }
+        return '';
+      };
+      const codeText = extractText(children).trim();
+
       return (
         <pre
-          className="my-3 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed"
+          className="group relative my-3 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed"
           style={{
             backgroundColor: 'var(--prose-pre-bg)',
             border: '1px solid var(--prose-pre-border)',
             color: 'var(--color-text)',
           }}
         >
+          {codeText && <CopyButton text={codeText} />}
           {children}
         </pre>
       );
