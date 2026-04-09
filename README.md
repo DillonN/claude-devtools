@@ -1,16 +1,13 @@
 <p align="center">
-  <img src="resources/icons/png/1024x1024.png" alt="claude-devtools" width="120" />
+  <img src="resources/claude.png" alt="Your Claude is coding blind" width="600" />
 </p>
 
 <h1 align="center">claude-devtools</h1>
 
 <p align="center">
-  <img src="resources/claude.png" alt="Your Claude is coding blind" width="600" />
-</p>
-
-<p align="center">
   <strong>Your Claude is coding blind. See everything it did.</strong>
 </p>
+
 
 <p align="center">
   <a href="https://claude-dev.tools"><img src="https://img.shields.io/badge/Website-claude--dev.tools-blue?style=flat-square" alt="Website" /></a>&nbsp;
