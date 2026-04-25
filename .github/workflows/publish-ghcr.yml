@@ -28,6 +28,7 @@ jobs:
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
       image: ${{ steps.pick.outputs.image }}
+      is_latest: ${{ steps.pick.outputs.is_latest }}
     steps:
       - name: Pick next tag to build
         id: pick
@@ -39,26 +40,48 @@ jobs:
           image="${REGISTRY}/${REPO,,}"
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
-          if [ -n "$INPUT_TAG" ]; then
-            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
+          # All non-prerelease upstream tags, newest-first
           gh release list -R "$UPSTREAM" -L 50 \
             --json tagName,isPrerelease,isDraft \
             --jq '.[] | select(.isPrerelease==false and .isDraft==false) | .tagName' \
-            | sort -u > upstream.txt
+            > upstream_all.txt
+          sort -rV upstream_all.txt > upstream_all_sorted.txt
 
-          # Package may not exist on first run -> 404 is fine, treat as empty
-          gh api --paginate \
-            "/users/${{ github.repository_owner }}/packages/container/claude-devtools/versions" \
-            --jq '[.[].metadata.container.tags[]?] | unique | .[]' \
-            2>/dev/null | sort -u > ghcr_raw.txt || : > ghcr_raw.txt
-          awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ {print "v"$0}' ghcr_raw.txt > ghcr.txt
+          # Filter to tags that actually contain a Dockerfile
+          : > upstream.txt
+          while IFS= read -r t; do
+            [ -z "$t" ] && continue
+            if gh api "repos/$UPSTREAM/contents/Dockerfile?ref=$t" --silent 2>/dev/null; then
+              echo "$t" >> upstream.txt
+            fi
+          done < upstream_all_sorted.txt
+          echo "Buildable upstream tags:"; cat upstream.txt
 
-          tag=$(comm -23 upstream.txt ghcr.txt | sort -V | head -1)
+          actual_latest=$(head -1 upstream.txt)
+          echo "Newest buildable upstream tag: $actual_latest"
+
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            # GHCR tags (may 404 on first run -> empty)
+            gh api --paginate \
+              "/users/${{ github.repository_owner }}/packages/container/claude-devtools/versions" \
+              --jq '[.[].metadata.container.tags[]?] | unique | .[]' \
+              2>/dev/null | sort -u > ghcr_raw.txt || : > ghcr_raw.txt
+            awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ {print "v"$0}' ghcr_raw.txt | sort -u > ghcr.txt
+
+            # Newest missing tag first so `latest` reaches its final value on run 1
+            sort -u upstream.txt > upstream_sorted.txt
+            tag=$(comm -23 upstream_sorted.txt ghcr.txt | sort -rV | head -1)
+          fi
+
           echo "Picked: ${tag:-<none>}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ] && [ "$tag" = "$actual_latest" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     needs: detect
@@ -148,7 +171,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}},value=${{ needs.detect.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.detect.outputs.tag }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ needs.detect.outputs.is_latest == 'true' }}
 
       - name: Create manifest list
         working-directory: /tmp/digests
